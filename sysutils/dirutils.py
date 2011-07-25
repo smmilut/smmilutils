@@ -21,6 +21,7 @@ class TempChdir:
     
 #------------------------------------------------------------------------------
 if __name__ == "__main__":
+    ## Some test
     from smmilutils.sysutils import shellprocess
     myproc = shellprocess.ShellProcess("ls")
     myproc.run()

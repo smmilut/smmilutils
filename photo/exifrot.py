@@ -19,16 +19,19 @@ import smmilutils.sysutils.fileutils, smmilutils.sysutils.errors
 
 #==============================================================================
 global logger
+logger = logging.getLogger("exifrot")
 
 #------------------------------------------------------------------------------
 def init_logging(dest=None):
     """  Initialize logging defaults.  """
+    # Format for the log filename
     fname_fmt = '%Y-%m-%d_%Hh%Mm%Ss_exifrot.log'
+    global logger
+    logger.setLevel(logging.DEBUG)
     if dest is None:
+        ## Destination directory not provided for the log file
         ## Set up logging to console
-        global logger
-        logger = logging.getLogger("exifrot")
-        logger.setLevel(logging.DEBUG)
+        # Console log handler
         c_hand = logging.StreamHandler()
         c_hand.setLevel(logging.WARNING)
         c_fmt = logging.Formatter(
@@ -37,46 +40,53 @@ def init_logging(dest=None):
         logger.addHandler(c_hand)
         logger.info("Logging to console")
     else:
-        ## set logging to file
+        ## Set logging to file
+        # Destination file
         fname = os.path.join(dest, datetime.datetime.now().strftime(fname_fmt))
-        logger.info('Now also logging to file {}'.format(fname))
+        # File log handler
         hand = logging.FileHandler(fname)
         hand.setLevel(logging.INFO)
         fmt = logging.Formatter(
                 '%(asctime)s %(levelname)-7s - %(module)-12s: %(message)s')
         hand.setFormatter(fmt)
         logger.addHandler(hand)
+        logger.info('Now also logging to file {}'.format(fname))
     
 #------------------------------------------------------------------------------
 def newname(fullpath,
         newfname_fmt='%Y-%m-%d_%Hh%Mm%Ss_{fname}',
         overwrite=False,
         destpath=None):
-    """  Return a new name for file, according to format  """
+    """  Return a new name for photo from Exif metadata  """
     ## Split file name
     fpath, fname = os.path.split(fullpath)
     fname, fext = os.path.splitext(fname)
     ## Generate new name
     # Get photo date from exif data (for file naming)
     exifdate = smmilutils.exif.exif.get_exif_date(fullpath)
+    # Include date in the format
     newfname_fmt = exifdate.strftime(newfname_fmt)
+    # Include old filename in the format
     newname = newfname_fmt.format(fname=fname)
     if destpath is None:
-        ## Don't move new file to another location
+        ## No outside destination
+        # Don't move new file to another location
         destpath = fpath
+    # Construct filename
     fullnewname = os.path.join(destpath, newname + fext)
     if os.path.isfile(fullnewname) and not overwrite:
         ## Filename already exists and we don't want to overwrite
         # We must generate a new name
-        logger.warning("Destination file {} already exists.".format(fullnewname))
+        logger.warning("Destination file {} already exists.".format(
+                        fullnewname))
         n = 0
         while os.path.isfile(fullnewname):
             ## Generate a new name, appending a number
             n += 1
             # Format "_001"
             appendix = "_{:03}".format(n)
-            newnew = "".join((newname, appendix, fext))
-            fullnewname = os.path.join(destpath, newnew)
+            fullnewname = os.path.join(destpath,
+                                        ''.join((newname, appendix, fext)))
             if n >= 999:
                 ## We're going to loop forever!
                 # (yeah i know the exception is not defined (yet) ! :p
@@ -90,15 +100,17 @@ def straighten(fullpath,
         rename_anyway=False,
         overwrite=False):
     """  Rotate image in filename, to put it upside-up.
+
         newfname_fmt: format for the new filename ('{fname}' for no change)
         destpath: destination path or None if in place
         rename_anyway: rename even if doesn't need rotation
         overwrite: if destination file already exist, don't generate a new name
         """
-    ## Get image properly rotated, and associated exif data
+    ## Get image properly rotated, and its associated exif data
     newimg, newexif = smmilutils.exif.exif.get_exif_oriented(fullpath)
     if destpath is None:
-        ## put in the same location as the original
+        ## No destination provided
+        # put in the same location as the original
         destpath = os.path.split(fullpath)[0]
     ## Generate new file name
     fullnewname = newname(fullpath,
@@ -106,10 +118,10 @@ def straighten(fullpath,
                     overwrite=overwrite,
                     destpath=destpath)
     if newimg is None:
-        ## image was not rotated
+        ## Image was not rotated
         logger.info("{} : image was not rotated".format(fullpath))
         if rename_anyway:
-            ## just rename the image
+            ## Just rename the image
             shutil.copy(fullpath, fullnewname)
             # apply permissions
             shutil.copystat(fullpath, fullnewname)
@@ -124,7 +136,7 @@ def straighten(fullpath,
     logger.debug("{0} : created from {1}".format(fullnewname, fullpath))
     ## Write correct exif data to new image
     smmilutils.exif.exif.apply_new_exif(fullnewname, newexif)
-    logger.debug("{0} : exif data applied".format(fullnewname))
+    logger.debug("{} : exif data applied".format(fullnewname))
     logger.info("{0} : transformed into -> {1}".format(fullpath, fullnewname))
     return fullnewname
 
@@ -135,10 +147,13 @@ def straighten_all(photolist,
         rename_anyway=True,
         overwrite=False):
     """  Straighten (rotate) all photos in the list.  """
-    # prepare a string for indicating progression ('023/265')
-    progress_str = '{{n:0{l}}}/{s}'.format(l=len(str(len(photolist))),
-                                        s=str(len(photolist)))
+    ## Prepare a string for indicating progression ('023/265')
+    total_num = len(photolist)
+    progress_str = '{{n:0{length}}}/{total}'.format(
+                    length=len(str(total_num)),
+                    total=total_num)
     for n, fullpath in enumerate(photolist):
+        # log progression
         logger.info(''.join((progress_str.format(n=n+1), " - processing image...")))
         try:
             straighten(fullpath,
@@ -151,12 +166,13 @@ def straighten_all(photolist,
                 smmilutils.exif.errors.BadExifTagError,
                 smmilutils.exif.errors.ExifError) as err:
             # Do not rotate, proceed to next file
-            logger.warning("{} : ERROR, file not processed".format(fullpath))
+            logger.warning("{0} : ERROR, file not processed : {1}".format(
+                            fullpath, err))
             continue
 
 #------------------------------------------------------------------------------
 def usage():
-    print """ exifrot : rotate and rename photos accordint to exif metadata
+    print """ exifrot : rotate and rename photos according to exif metadata
         Options :
     -h, --help: this message
     -o, --output: destination directory
@@ -167,20 +183,26 @@ def usage():
 #==============================================================================
 def main(argv):
     """  Main rotate script.  """
-    # Default directory
+    # init console logging
     init_logging()
     try:
+        ## Get command line options
         opts, args = getopt.getopt(argv, 'ho:f:aw',
                     ['help', 'output=', 'fmt=', 'rename_anyway', 'overwrite'])
     except getopt.GetoptError:
-        logger.error("Wrong arguments")
+        logger.error("Wrong command line arguments")
         sys.exit(1)
     ## Default for options
+    # destination directory
     destdir = None
+    # format of new filenames
     newfname_fmt = '%Y-%m-%d_%Hh%Mm%Ss_{fname}'
+    # rename even if image was not transformed
     rename_anyway = False
+    # overwrite if renamed file already exist
     overwrite = False
     for opt, arg in opts:
+        ## Parse command line options
         if opt in ('-h', '--help'):
             usage()
             sys.exit()
@@ -192,10 +214,14 @@ def main(argv):
             rename_anyway = True
         elif opt in ('-w', '--overwrite'):
             overwrite = True
+    # Work on all files given on command line
     filelist = [a for a in args if os.path.isfile(a)]
     logdest = destdir
     if logdest is None:
+        ## No destination was given for log file
+        # We log in the same location as the first photo to work on
         logdest = os.path.split(filelist[0])[0]
+    # init logging to a file
     init_logging(logdest)
     logger.info("""options:
     destination directory: {0}
@@ -207,9 +233,11 @@ def main(argv):
         rename_anyway,
         overwrite,
         len(filelist)))
+    ## Shake it
     straighten_all(filelist, newfname_fmt=newfname_fmt, destpath=destdir, rename_anyway=rename_anyway, overwrite=overwrite)
     
 #------------------------------------------------------------------------------
 if __name__ == "__main__":
+    ## Executed as a main script
     main(sys.argv[1:])
 

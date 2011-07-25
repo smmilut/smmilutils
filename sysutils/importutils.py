@@ -3,6 +3,8 @@
     utilities for importing in custom ways
     
     Pil Smmilut 2011-02-15
+
+    (that's when i didn't know about the 'imp' module)
     
 """
 

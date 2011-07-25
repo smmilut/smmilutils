@@ -27,16 +27,6 @@ def get_exif(filename):
 
         Returns a pyexiv2.metadata.ImageMetadata object
 
-        Now uses pyexiv2 library
-        
-        #Returns a dictionary of {tag_string: value_string}
-        
-        #Needs PIL library :
-        #from PIL import Image
-        #from PIL.ExifTags import TAGS
-        
-        #Stolen from
-        #http://stackoverflow.com/questions/765396/exif-manipulation-library-for-python
     """
     metadata = pyexiv2.ImageMetadata(filename)
     metadata.read()
@@ -53,43 +43,34 @@ def get_exif_date(filename):
     global logger
     # The name exif uses for the date of the image
     EXIF_DATE_TAGNAME = "Exif.Image.DateTime"
-    # format of the exif date : "yyyy:mm:dd hh:mm:ss"
-    #EXIFDATE_FORMAT = "%Y:%m:%d %H:%M:%S"
+    ## Get all Exif metadata
+    # (It would be faster if i knew how to get only one tag)
+    exif_data = get_exif(filename)
     try:
-        ## Get all Exif metadata
-        # (It would be faster if i knew how to get only one tag)
-        exif_data = get_exif(filename)
-    except Exception as err:
-        ## Any other error retrieving exif metadata
-        ## !! VERY DANGEROUS !!
-        # We should log this, or not even do it i think...
-        logger.error("Unknown error in Exif metadata for file {0}.".format(filename))
-        raise errors.ExifError(err)
-    try:
-        ## Get date (format is : "2010:12:17 18:15:02")
         exif_datetag = exif_data[EXIF_DATE_TAGNAME]
     except KeyError:
         ## Exif tag is not in dictionnary
-        logger.error("File {0} does not contain Exif tag {1}.".format(
+        logger.error("{0} : file does not contain Exif tag for date: {1}.".format(
                             filename, EXIF_DATE_TAGNAME))
         raise errors.NoExifTagError(EXIF_DATE_TAGNAME, filename)
     exif_date = exif_datetag.value
-    logger.debug("Exif date for file {0} : {1}".format(filename, exif_datetag))
+    logger.debug("{0} : Exif date retrieved : {1}".format(filename, exif_datetag))
     return exif_date
     
 #------------------------------------------------------------------------------
 def get_exif_oriented(filename):
     """
-          Get Exif orientation from an image filename.
+          Up-turn an image according to Exif metadata
         
         Returns a tuple (image object rotated upside-up, new metadata)
             or (None, None) if image was not transformed
     """
     global logger
-    # The name exif uses for the orientation of the image
+    # The name used by Exif for the orientation of an image
     EXIF_ORIENT_TAGNAME = "Exif.Image.Orientation"
-    # transformation necessary for straightening each orientation
+    ## Transformation necessary for straightening each orientation
     EXIFORIENT_TRANSFO = {
+            # {Orientation: (method, argument, flipfunction)}
             '1': (None, None, None),  # 1: no need to change
             '2': ('transpose', Image.FLIP_LEFT_RIGHT, lambda x, y: (x, y)),
             '3': ('transpose', Image.ROTATE_180, lambda x, y: (x, y)),
@@ -98,6 +79,7 @@ def get_exif_oriented(filename):
             '6': ('transpose', Image.ROTATE_270, lambda x, y: (y, x)),
             '7': (None, None),  # 7: ROTATE_90 + FLIP_LEFT_RIGHT : i don't want to do it
             '8': ('transpose', Image.ROTATE_90, lambda x, y: (y, x))}
+    # Names of transformations (only needed for logging)
     TRANS_NAMES = {
             Image.FLIP_LEFT_RIGHT: "flip left to right",
             Image.FLIP_TOP_BOTTOM: "flip top to bottom",
@@ -107,22 +89,14 @@ def get_exif_oriented(filename):
     ## tags that might need to be updated
     ETAG_XSIZE = 'Exif.Photo.PixelXDimension'
     ETAG_YSIZE = 'Exif.Photo.PixelYDimension'
-    try:
-        ## Get all Exif metadata
-        # (It would be faster if i knew how to get only one tag)
-        exif_data = get_exif(filename)
-    except Exception as err:
-        ## Any other error retrieving exif metadata
-        ## !! VERY DANGEROUS !!
-        # We should log this, or not even do it i think...
-        logger.error("Unknown error in Exif metadata for file {0}.".format(filename))
-        raise errors.ExifError(err)
+    # Get all Exif metadata
+    exif_data = get_exif(filename)
     try:
         ## Get orientation (a number between 1 and 8)
         exif_orient = exif_data[EXIF_ORIENT_TAGNAME].raw_value
     except KeyError:
         ## Exif tag is not in dictionnary
-        logger.error("File {0} does not contain Exif tag {1}.".format(
+        logger.error("{0} : file does not contain Exif tag '{1}'".format(
                             filename, EXIF_ORIENT_TAGNAME))
         raise errors.NoExifTagError(EXIF_ORIENT_TAGNAME, filename)
     try:
@@ -130,21 +104,22 @@ def get_exif_oriented(filename):
         trans, trans_arg, flipf = EXIFORIENT_TRANSFO[exif_orient]
     except KeyError:
         ## Wrong orientation format
-        logger.error("value {0}: unknown value for Exif tag {1} in file {2}".format(
-            exif_orient, EXIF_ORIENT_TAGNAME, filename))
+        logger.error("{0} : Exif tag '{1}' has unknown value '{2}'".format(
+            filename, EXIF_ORIENT_TAGNAME, exif_orient))
         raise errors.BadExifTagError(EXIF_ORIENT_TAGNAME, filename)
     if trans is None:
-        ## Don't transform the image
-        logger.debug("image {0} was not transformed".format(filename))
+        ## We don't have/need a method for tranforming the image
+        # Don't transform the image
+        logger.debug("{} : image was not transformed".format(filename))
         return (None, None)
     try:
         ## Open image for tranformation
         pil_image = Image.open(filename)
     except IOError:
         ## PIL could not open the image file
-        logger.error("Could not open file \"%s\"" % filename)
+        logger.error("{} : Could not open image file".format(filename))
         raise errors.PIL_OpenError(filename)
-    ## transform the image
+    ## Transform the image
     new_image = getattr(pil_image, trans)(trans_arg)
     ## transform metadata if necessary
     try:
@@ -152,7 +127,7 @@ def get_exif_oriented(filename):
         xsize = exif_data[ETAG_XSIZE]
     except KeyError:
         ## Exif tag is not in dictionnary
-        logger.error("File {0} does not contain Exif tag {1}.".format(
+        logger.error("{0} : file does not contain Exif tag '{1}'".format(
                             filename, ETAG_XSIZE))
         raise errors.NoExifTagError(ETAG_XSIZE, filename)
     try:
@@ -160,14 +135,16 @@ def get_exif_oriented(filename):
         ysize = exif_data[ETAG_YSIZE]
     except KeyError:
         ## Exif tag is not in dictionnary
-        logger.error("File {0} does not contain Exif tag {1}.".format(
+        logger.error("{0} : file does not contain Exif tag '{1}'".format(
                             filename, ETAG_YSIZE))
         raise errors.NoExifTagError(ETAG_YSIZE, filename)
+    # Swap the values of XResolution and YResolution if needed
     exif_data[ETAG_XSIZE], exif_data[ETAG_YSIZE] = flipf(xsize.value, ysize.value)
     # consider yourself ORIENTED, baby
     exif_data[EXIF_ORIENT_TAGNAME] = 1
 
-    logger.debug("File {0} was transformed: {1}".format(filename, TRANS_NAMES[trans_arg]))
+    logger.debug("{0} : image was transformed: {1}".format(
+                filename, TRANS_NAMES[trans_arg]))
     return new_image, exif_data
     
 #------------------------------------------------------------------------------
@@ -175,8 +152,10 @@ def apply_new_exif(filename, new_exif):
     """  Change image metadata
         Put "new_exif" metadata into "filename" image
     """
+    # Get original metadata
     old_exif = pyexiv2.ImageMetadata(filename)
     old_exif.read()
+    # Replace original metadata with new one
     new_exif.copy(old_exif, exif=True)
     old_exif.write()
 
@@ -184,13 +163,11 @@ def apply_new_exif(filename, new_exif):
 if __name__ == "__main__":
     # Some tests
     filename = "/home/shares/test/progtests/IMG_1834.JPG"
-    try:
-        exif_date = get_exif_date(filename)
-    except errors.NoExifTagError as err:
-        print "\n\nohno :", err, "\n"
+    exif_date = get_exif_date(filename)
     # Format the datetime object into a string
     formatteddate = exif_date.strftime("%Y-%m-%d_%Hh%Mm%Ss")
     print filename, "->", exif_date, "->", formatteddate
+    # rotate if needed
     img_straight, new_exif = get_exif_oriented(filename)
     newname = "{0}_straightnow.JPG".format(filename)
     img_straight.save(newname)

@@ -26,7 +26,7 @@ def cmd_exists(cmdname):
     
 #------------------------------------------------------------------------------
 class ShellProcess:
-    """  A shell process that can be run several time.
+    """  A shell process that can be run several times.
         You can retrieve stderr and stdout separately
     """
     def __init__(self, callstring):
